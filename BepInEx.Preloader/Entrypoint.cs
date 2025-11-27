@@ -112,19 +112,21 @@ namespace Doorstop
 		/// </summary>
 		public static void Start()
 		{
-			// We set it to the current directory first as a fallback, but try to use the same location as the .exe file.
+			// We set it to the current directory as a fallback, but try to use the BepInEx folder for consistency across platforms
 			string silentExceptionLog = $"preloader_{DateTime.Now:yyyyMMdd_HHmmss_fff}.log";
 
 			try
 			{
 				EnvVars.LoadVars();
 
-				string gamePath = Path.GetDirectoryName(EnvVars.DOORSTOP_PROCESS_PATH) ?? ".";
-				silentExceptionLog = Path.Combine(gamePath, silentExceptionLog);
-
 				// Get the path of this DLL via Doorstop env var because Assembly.Location mangles non-ASCII characters on some versions of Mono for unknown reasons
 				preloaderPath = Path.GetDirectoryName(Path.GetFullPath(EnvVars.DOORSTOP_INVOKE_DLL_PATH));
 
+				if (!string.IsNullOrEmpty(preloaderPath))
+				{	// use the parent of the preloader path directory, which should be the BepInEx folder
+					silentExceptionLog = Path.Combine(Path.GetDirectoryName(preloaderPath), silentExceptionLog);
+				}
+				
 				AppDomain.CurrentDomain.AssemblyResolve += ResolveCurrentDirectory;
 
 				// In some versions of Unity 4, Mono tries to resolve BepInEx.dll prematurely because of the call to Paths.SetExecutablePath
@@ -135,7 +137,18 @@ namespace Doorstop
 			}
 			catch (Exception ex)
 			{
-				File.WriteAllText(silentExceptionLog, ex.ToString());
+				string content = ex.ToString();
+				try
+				{
+					File.WriteAllText(silentExceptionLog, content);
+				}
+				catch
+				{
+					if (!string.IsNullOrEmpty(preloaderPath))
+					{	// Additional fallback in case silentExceptionLog was not writable, try to use the current directory.
+						File.WriteAllText(Path.GetFileName(silentExceptionLog), content);
+					}
+				}
 			}
 			finally
 			{
